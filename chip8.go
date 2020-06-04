@@ -100,11 +100,11 @@ func (c8 *Chip8) Initialise() {
 // LoadRom accepts slice of bytes and loads into memory, starting at 0x200.
 func (c8 *Chip8) LoadRom(rom []byte) error {
 	for i, byt := range rom {
-		c8.memory[0x200 + i] = byt
+		c8.memory[0x200+i] = byt
 	}
 
 	return nil
-	
+
 }
 
 // EmulateCycle fetches, decodes, executes next opcode and updates timers.
@@ -390,15 +390,15 @@ func (c8 *Chip8) x8XY4() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 	y := int((c8.opcode & 0x00F0) >> 4)
 
-	c8.register[x] += c8.register[y]
-
-	if int(x)+int(y) > 0xFF {
+	if int(c8.register[x])+int(c8.register[y]) > 0xFF {
 		c8.register[0xF] = 1
 
 	} else {
 		c8.register[0xF] = 0
 
 	}
+
+	c8.register[x] += c8.register[y]
 
 	c8.incrementPC(1)
 
@@ -409,15 +409,15 @@ func (c8 *Chip8) x8XY5() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 	y := int((c8.opcode & 0x00F0) >> 4)
 
-	c8.register[x] -= c8.register[y]
-
-	if y > x {
+	if c8.register[y] > c8.register[x] {
 		c8.register[0xF] = 0
 
 	} else {
 		c8.register[0xF] = 1
 
 	}
+
+	c8.register[x] -= c8.register[y]
 
 	c8.incrementPC(1)
 
@@ -427,7 +427,7 @@ func (c8 *Chip8) x8XY5() {
 func (c8 *Chip8) x8XY6() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 
-	c8.register[0xF] = c8.register[x] & 0x000F
+	c8.register[0xF] = c8.register[x] & 0x01
 	c8.register[x] = c8.register[x] >> 1
 
 	c8.incrementPC(1)
@@ -439,15 +439,15 @@ func (c8 *Chip8) x8XY7() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 	y := int((c8.opcode & 0x00F0) >> 4)
 
-	c8.register[x] = c8.register[y] - c8.register[x]
-
-	if x > y {
+	if c8.register[x] > c8.register[y] {
 		c8.register[0xF] = 0
 
 	} else {
 		c8.register[0xF] = 1
 
 	}
+
+	c8.register[x] = c8.register[y] - c8.register[x]
 
 	c8.incrementPC(1)
 
@@ -457,7 +457,7 @@ func (c8 *Chip8) x8XY7() {
 func (c8 *Chip8) x8XYE() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 
-	c8.register[0xF] = c8.register[x] & 0x000F
+	c8.register[0xF] = (c8.register[x] & 0x80) >> 7
 	c8.register[x] = c8.register[x] << 1
 
 	c8.incrementPC(1)
@@ -514,10 +514,10 @@ func (c8 *Chip8) xDXYN() {
 	y := int((c8.opcode & 0x00F0) >> 4)
 	n := int((c8.opcode & 0x000F))
 
-	vx := c8.register[x] // display x coordinate
-	vy := c8.register[y] // display y coordinate
+	vx := int(c8.register[x]) // display x coordinate
+	vy := int(c8.register[y]) // display y coordinate
 
-	start := int(64*vy + vx) // number of pixels since origin
+	start := 64*vy + vx // number of pixels since origin
 	pos := start             // current pixel
 
 	for yLine := 0; yLine < n; yLine++ {
@@ -528,7 +528,7 @@ func (c8 *Chip8) xDXYN() {
 
 			pix := spr & (0x80 >> xLine) // scan through sprite, one pixel at a time
 
-			if pix == 1 {
+			if pix > 1 {
 				if c8.gfx[pos] == 1 {
 					c8.gfx[pos] = 0
 					c8.register[0xF] = 1
