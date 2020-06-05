@@ -8,7 +8,7 @@ import (
 	"github.com/hajimehoshi/ebiten"
 )
 
-const debug bool = true
+const debug bool = false
 
 func main() {
 
@@ -61,11 +61,42 @@ type Game struct {
 	buffer []byte
 }
 
+func (g *Game) updateKeys() {
+	keyMap := map[ebiten.Key]int {
+		ebiten.KeyX: 0x0,
+		ebiten.Key1: 0x1,
+		ebiten.Key2: 0x2,
+		ebiten.Key3: 0x3,
+		ebiten.KeyQ: 0x4,
+		ebiten.KeyW: 0x5,
+		ebiten.KeyE: 0x6,
+		ebiten.KeyA: 0x7,
+		ebiten.KeyS: 0x8,
+		ebiten.KeyD: 0x9,
+		ebiten.KeyZ: 0xA,
+		ebiten.KeyC: 0xB,
+		ebiten.Key4: 0xC,
+		ebiten.KeyR: 0xD,
+		ebiten.KeyF: 0xE,
+		ebiten.KeyV: 0xF,
+	}
+
+	for k, v := range keyMap {
+		if ebiten.IsKeyPressed(k) {
+			g.chip8.key[v] = 1
+		} else {
+			g.chip8.key[v] = 0
+		}
+	}
+
+}
+
 // Update proceeds the game state.
 // Update is called every tick (1/60 [s] by default).
 func (g *Game) Update(screen *ebiten.Image) error {
 	// Write your game's logical update.
 
+	g.updateKeys()
 	g.chip8.EmulateCycle()
 
 	return nil
