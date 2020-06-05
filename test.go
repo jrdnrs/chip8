@@ -791,7 +791,7 @@ func (t *test) testxFX0A() {
 
 func (t *test) testxFX15() {
 	t.c8.Initialise()
-	
+
 	t.c8.opcode = 0xF015
 	t.c8.register[0] = 7
 
@@ -811,7 +811,7 @@ func (t *test) testxFX15() {
 
 func (t *test) testxFX18() {
 	t.c8.Initialise()
-	
+
 	t.c8.opcode = 0xF018
 	t.c8.register[0] = 7
 
@@ -886,19 +886,100 @@ func (t *test) testxFX1E() {
 func (t *test) testxFX29() {
 	t.c8.Initialise()
 
+	t.c8.opcode = 0xF029
+	t.c8.register[0] = 4
+
+	t.c8.xFX29()
+
+	if t.c8.i != 20 {
+		fmt.Printf("Opcode 0xFX29 halted. Incorrect register 0; expected 20, received %d.\n", t.c8.register[0])
+
+		return
+
+	}
+
+	fmt.Println("Opcode 0xFX29 test passed.")
+
 }
 
 func (t *test) testxFX33() {
 	t.c8.Initialise()
+
+	t.c8.opcode = 0xF033
+	t.c8.register[0] = 204
+
+	t.c8.xFX33()
+
+	if t.c8.memory[0] != 2 {
+		fmt.Printf("Opcode 0xFX33 halted. Incorrect memory 0x0; expected 2, received %d.\n", t.c8.memory[0])
+
+		return
+	}
+
+	if t.c8.memory[1] != 0 {
+		fmt.Printf("Opcode 0xFX33 halted. Incorrect memory 0x1; expected 0, received %d.\n", t.c8.memory[1])
+
+		return
+	}
+
+	if t.c8.memory[2] != 4 {
+		fmt.Printf("Opcode 0xFX33 halted. Incorrect memory 0x2; expected 4, received %d.\n", t.c8.memory[2])
+
+		return
+	}
+
+	fmt.Println("Opcode 0xFX33 test passed.")
 
 }
 
 func (t *test) testxFX55() {
 	t.c8.Initialise()
 
+	t.c8.opcode = 0xFE55
+
+	values := []byte{4, 5, 3, 6, 3, 2, 8, 9, 1, 4, 0, 2, 6, 8, 5}
+
+	for i, v := range values {
+		t.c8.register[i] = v
+	}
+
+	t.c8.xFX55()
+
+	for i, v := range values {
+		if t.c8.memory[i] != v {
+			fmt.Printf("Opcode 0xFX55 halted. Incorrect memory 0x%X; expected %d, received %d.\n", i, v, t.c8.memory[i])
+
+			return
+
+		}
+	}
+
+	fmt.Println("Opcode 0xFX55 test passed.")
+
 }
 
 func (t *test) testxFX65() {
 	t.c8.Initialise()
+
+	t.c8.opcode = 0xFE65
+
+	values := []byte{4, 5, 3, 6, 3, 2, 8, 9, 1, 4, 0, 2, 6, 8, 5}
+
+	for i, v := range values {
+		t.c8.memory[i] = v
+	}
+
+	t.c8.xFX65()
+
+	for i, v := range values {
+		if t.c8.register[i] != v {
+			fmt.Printf("Opcode 0xFX65 halted. Incorrect register 0x%X; expected %d, received %d.\n", i, v, t.c8.register[i])
+
+			return
+
+		}
+	}
+
+	fmt.Println("Opcode 0xFX65 test passed.")
 
 }
