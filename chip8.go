@@ -528,7 +528,7 @@ func (c8 *Chip8) xDXYN() {
 
 			pix := spr & (0x80 >> xLine) // scan through sprite, one pixel at a time
 
-			if pix > 1 {
+			if pix >= 1 {
 				if c8.gfx[pos] == 1 {
 					c8.gfx[pos] = 0
 					c8.register[0xF] = 1
@@ -588,11 +588,10 @@ func (c8 *Chip8) xFX07() {
 func (c8 *Chip8) xFX0A() {
 	x := int((c8.opcode & 0x0F00) >> 8)
 
-	keyState := c8.key
 	pressed := false
 
-	for i := range keyState {
-		if keyState[i] == 0 && c8.key[i] != 0 {
+	for i := range c8.key {
+		if c8.key[i] != 0 {
 			c8.register[x] = byte(i)
 			pressed = true
 
