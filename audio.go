@@ -22,7 +22,7 @@ type Beeper struct {
 
 // NewBeeper returns instance of Beeper, with sampling function. SoundTimer register values should be passed through the soundChannel at 60hz.
 func NewBeeper(sampleRate int, toneFrequency float64, volume float64) (*Beeper, error) {
-	c, err := oto.NewContext(sampleRate, 1, 2, int(sampleRate/20))
+	c, err := oto.NewContext(sampleRate, 1, 2, int(sampleRate/15))
 
 	if err != nil {
 		return nil, err
@@ -31,7 +31,7 @@ func NewBeeper(sampleRate int, toneFrequency float64, volume float64) (*Beeper, 
 	return &Beeper{
 		player:            c.NewPlayer(),
 		sampleRate:        sampleRate,
-		bufferSizeInBytes: int(sampleRate / 20),
+		bufferSizeInBytes: int(sampleRate / 15),
 		toneFrequency:     toneFrequency,
 		volume:            volume,
 		amplitude:         int16(volume * 0xFFFF),

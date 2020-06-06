@@ -32,7 +32,7 @@ func main() {
 	game.chip8.Initialise()
 
 	// Audio
-	a, err := NewBeeper(8000, 600, 0.005)
+	a, err := NewBeeper(44100, 600, 0.005)
 	if err != nil {
 		panic(err)
 	}
