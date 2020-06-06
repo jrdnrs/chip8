@@ -31,18 +31,24 @@ func main() {
 	game.chip8 = &Chip8{}
 	game.chip8.Initialise()
 
-	
 	// Audio
-	a, err := NewAudio(8000, 2, 1470, 587.3, 0.25, 0.0625)
+	a, err := NewBeeper(8000, 600, 0.005)
 	if err != nil {
 		panic(err)
 	}
 	game.audio = a
-	game.audio.InitSound()
+	game.audio.InitBeeper()
+	soundTicker := time.NewTicker(time.Second / 60)
 	
+	go func() {
+		for range soundTicker.C {
+			game.chip8.updateTimers()
+			game.audio.soundChannel <- game.chip8.soundTimer
+		}
+	}()
+
 	// Load rom
 	game.chip8.LoadRom(rom)
-	go game.timers()
 
 	// Specify the window size as you like. Here, a doubled size is specified.
 	ebiten.SetWindowSize(640, 320)
@@ -54,16 +60,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-}
-
-func (g *Game) timers() {
-	for {
-		g.chip8.updateTimers()
-		g.audio.soundChannel <- g.chip8.soundTimer
-
-		time.Sleep(time.Second / 60)
-
-	}
 }
 
 func openRom(path string) ([]byte, error) {
@@ -81,7 +77,7 @@ func openRom(path string) ([]byte, error) {
 type Game struct {
 	chip8  *Chip8
 	buffer []byte
-	audio  *Audio
+	audio  *Beeper
 }
 
 func (g *Game) updateKeys() {
