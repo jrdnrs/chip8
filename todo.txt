@@ -1,10 +1,9 @@
-- Finish writing unit tests for all opcodes.
-- Ensure that all opcodes pass unit tests.
-- Are roms being loaded correctly? Are they genuine?
-- Decide which graphics library to use. Is ReplacePixels() in ebiten best way?
-- Implement controls. Check for key presses and update key array.
+
+
+
+
+
 - Change clock speed.
-- Add beep sound.
 - Add way to stop, start and step opcodes during emulation.
 - Add way to change palette.
 - Add view for opcodes and memory during emulation.

@@ -56,7 +56,7 @@ type Chip8 struct {
 	// HEX based keypad (0x0-0xF).
 	key [16]byte
 
-	drawFlag bool
+	drawRequired bool
 }
 
 // Initialise registers and memory once.
@@ -245,6 +245,7 @@ func (c8 *Chip8) x00E0() {
 
 	c8.incrementPC(1)
 
+	c8.drawRequired = true
 }
 
 // Returns from a subroutine.
@@ -538,7 +539,7 @@ func (c8 *Chip8) xDXYN() {
 			}
 		}
 	}
-	c8.drawFlag = true
+	c8.drawRequired = true
 	c8.incrementPC(1)
 
 }

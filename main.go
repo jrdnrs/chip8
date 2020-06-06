@@ -2,7 +2,6 @@ package main
 
 import (
 	"io/ioutil"
-	"log"
 	"os"
 	"time"
 
@@ -27,9 +26,9 @@ func main() {
 
 	// Prepare emu
 	game := &Game{}
-	game.buffer = make([]byte, 64*32*4)
 	game.chip8 = &Chip8{}
 	game.chip8.Initialise()
+	cpuTicker := time.NewTicker(time.Second / 500)
 
 	// Audio
 	a, err := NewBeeper(44100, 600, 0.005)
@@ -39,7 +38,24 @@ func main() {
 	game.audio = a
 	game.audio.InitBeeper()
 	soundTicker := time.NewTicker(time.Second / 60)
+
 	
+
+	// Display
+	game.display = NewDisplay(&game.chip8.gfx, &game.chip8.drawRequired)
+	game.display.InitDisplay()
+
+	// Load rom
+	game.chip8.LoadRom(rom)
+
+	// Run timers
+	go func() {
+		for range cpuTicker.C {
+			game.updateKeys()
+			game.chip8.EmulateCycle()
+		}
+	}()
+
 	go func() {
 		for range soundTicker.C {
 			game.chip8.updateTimers()
@@ -47,18 +63,8 @@ func main() {
 		}
 	}()
 
-	// Load rom
-	game.chip8.LoadRom(rom)
-
-	// Specify the window size as you like. Here, a doubled size is specified.
-	ebiten.SetWindowSize(640, 320)
-	ebiten.SetWindowTitle("CHIP-8")
-	ebiten.SetMaxTPS(500)
-
-	// Call ebiten.RunGame to start your game loop.
-	if err := ebiten.RunGame(game); err != nil {
-		log.Fatal(err)
-	}
+	// Run
+	ebiten.Run(game.display.Render, 64, 32, 10, "CHIP-8")
 
 }
 
@@ -75,9 +81,9 @@ func openRom(path string) ([]byte, error) {
 
 // Game implements ebiten.Game interface.
 type Game struct {
-	chip8  *Chip8
-	buffer []byte
-	audio  *Beeper
+	chip8   *Chip8
+	audio   *Beeper
+	display *Display
 }
 
 func (g *Game) updateKeys() {
@@ -108,50 +114,4 @@ func (g *Game) updateKeys() {
 		}
 	}
 
-}
-
-// Update proceeds the game state.
-// Update is called every tick (1/60 [s] by default).
-func (g *Game) Update(screen *ebiten.Image) error {
-	// Write your game's logical update.
-
-	g.updateKeys()
-	g.chip8.EmulateCycle()
-
-	return nil
-}
-
-// Draw draws the game screen.
-// Draw is called every frame (typically 1/60[s] for 60Hz display).
-func (g *Game) Draw(screen *ebiten.Image) {
-	// Write your game's rendering.
-
-	if g.chip8.drawFlag {
-
-		for i, pixel := range g.chip8.gfx {
-			if pixel == 1 {
-				g.buffer[4*i] = 20
-				g.buffer[4*i+1] = 23
-				g.buffer[4*i+2] = 45
-				g.buffer[4*i+3] = 255
-
-			} else {
-				g.buffer[4*i] = 145
-				g.buffer[4*i+1] = 145
-				g.buffer[4*i+2] = 130
-				g.buffer[4*i+3] = 255
-			}
-
-		}
-
-		screen.ReplacePixels(g.buffer)
-
-	}
-
-}
-
-// Layout takes the outside size (e.g., the window size) and returns the (logical) screen size.
-// If you don't have to adjust the screen size with the outside size, just return a fixed size.
-func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
-	return 64, 32
 }
