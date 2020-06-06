@@ -34,7 +34,7 @@ func NewBeeper(sampleRate int, toneFrequency float64, volume float64) (*Beeper, 
 		bufferSizeInBytes: int(sampleRate / 15),
 		toneFrequency:     toneFrequency,
 		volume:            volume,
-		amplitude:         int16(volume * 0xFFFF),
+		amplitude:         int16(volume * 0x7FFF),
 		step:              toneFrequency * 2 * math.Pi / float64(sampleRate),
 		soundChannel:      make(chan byte, 60),
 	}, nil

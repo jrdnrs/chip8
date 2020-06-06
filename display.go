@@ -21,7 +21,6 @@ type Display struct {
 
 // NewDisplay exposes Render function which uses gfxMemory to draw image to screen.
 func NewDisplay(gfxMemory *[2048]byte, drawRequired *bool) *Display {
-
 	return &Display{
 		memory:        gfxMemory,
 		previousFrame: *gfxMemory,
