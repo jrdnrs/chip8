@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 
 	"github.com/hajimehoshi/ebiten"
 )
@@ -17,31 +18,52 @@ func main() {
 		return
 	}
 
+	// Get rom path from arg and open file
 	romPath := os.Args[1]
+	rom, err := openRom(romPath)
+	if err != nil {
+		panic(err)
+	}
 
+	// Prepare emu
 	game := &Game{}
 	game.buffer = make([]byte, 64*32*4)
 	game.chip8 = &Chip8{}
 	game.chip8.Initialise()
 
-	rom, err := openRom(romPath)
-
+	
+	// Audio
+	a, err := NewAudio(8000, 2, 1470, 587.3, 0.25, 0.0625)
 	if err != nil {
-		return
+		panic(err)
 	}
-
+	game.audio = a
+	game.audio.InitSound()
+	
+	// Load rom
 	game.chip8.LoadRom(rom)
+	go game.timers()
 
-	// Sepcify the window size as you like. Here, a doubled size is specified.
+	// Specify the window size as you like. Here, a doubled size is specified.
 	ebiten.SetWindowSize(640, 320)
 	ebiten.SetWindowTitle("CHIP-8")
-	ebiten.SetMaxTPS(700)
+	ebiten.SetMaxTPS(500)
 
 	// Call ebiten.RunGame to start your game loop.
 	if err := ebiten.RunGame(game); err != nil {
 		log.Fatal(err)
 	}
 
+}
+
+func (g *Game) timers() {
+	for {
+		g.chip8.updateTimers()
+		g.audio.soundChannel <- g.chip8.soundTimer
+
+		time.Sleep(time.Second / 60)
+
+	}
 }
 
 func openRom(path string) ([]byte, error) {
@@ -59,10 +81,11 @@ func openRom(path string) ([]byte, error) {
 type Game struct {
 	chip8  *Chip8
 	buffer []byte
+	audio  *Audio
 }
 
 func (g *Game) updateKeys() {
-	keyMap := map[ebiten.Key]int {
+	keyMap := map[ebiten.Key]int{
 		ebiten.KeyX: 0x0,
 		ebiten.Key1: 0x1,
 		ebiten.Key2: 0x2,
@@ -109,8 +132,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	if g.chip8.drawFlag {
 
-		for i := range g.buffer {
-			g.buffer[i] = g.chip8.gfx[int(i/4)] * 255
+		for i, pixel := range g.chip8.gfx {
+			if pixel == 1 {
+				g.buffer[4*i] = 20
+				g.buffer[4*i+1] = 23
+				g.buffer[4*i+2] = 45
+				g.buffer[4*i+3] = 255
+
+			} else {
+				g.buffer[4*i] = 145
+				g.buffer[4*i+1] = 145
+				g.buffer[4*i+2] = 130
+				g.buffer[4*i+3] = 255
+			}
+
 		}
 
 		screen.ReplacePixels(g.buffer)

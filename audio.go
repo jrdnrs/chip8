@@ -2,32 +2,77 @@ package main
 
 import (
 	"math"
+
+	"github.com/hajimehoshi/oto"
 )
 
-// Generates tone for given duration is ms.
-func genTone(duration int, sampleRate int, frequency int, channels int) []byte {
-	numSamples := duration * sampleRate / 1000
-	samples := make([]float64, numSamples)
-	finalSound := make([]byte, 2*numSamples*channels)
+// Audio handles audio.
+type Audio struct {
+	player            *oto.Player
+	sampleRate        int
+	byteDepth         int
+	bufferSizeInBytes int
+	toneFrequency     float64
+	sequence          float64
+	volume            float64
+	soundChannel      chan byte
+}
 
-	// Fill array with samples https://www.desmos.com/calculator/6qpozvgl9m.
-	for i := range samples {
-		samples[i] = math.Sin(float64(2*i) * math.Pi / float64(sampleRate/frequency))
+// NewAudio returns instance of Audio, with sampling function.
+func NewAudio(sampleRate int, byteDepth int, bufferSizeInBytes int, toneFrequency float64, sequence float64, volume float64) (*Audio, error) {
+	c, err := oto.NewContext(sampleRate, 1, byteDepth, bufferSizeInBytes)
+
+	if err != nil {
+		return nil, err
 	}
 
+	return &Audio{
+		player:            c.NewPlayer(),
+		sampleRate:        sampleRate,
+		byteDepth:         byteDepth,
+		bufferSizeInBytes: bufferSizeInBytes,
+		toneFrequency:     toneFrequency,
+		sequence:          sequence,
+		volume:            volume,
+		soundChannel:      make(chan byte, 60),
+	}, nil
+}
 
-	var val int16
-	for i, dval := range samples {
-		// Scale to maximum amplitude.
-		val = int16(dval * 0x7FFF)
-
-		// Per channel, 2 bytes in little endian
-		for j := 0; j < channels; j++ {
-			finalSound[i*2*channels+(j*2)] = byte(val & 0x00FF)
-			finalSound[i*2*channels+(j*2)+1] = byte((uint16(val) & 0xFF00) >> 8)
+// InitSound starts a goroutine which waits for sound to be played.
+func (a *Audio) InitSound() {
+	go func() {
+		for b := range a.soundChannel {
+			if b > 0x0 {
+				if _, err := a.player.Write(a.generateSample()); err != nil {
+					panic(err)
+				}
+			}
 		}
+	}()
+}
+
+func (a *Audio) generateSample() []byte {
+	length := a.bufferSizeInBytes / 2
+	s := make([]int16, length)
+	a.fill(s)
+	bytes := make([]byte, a.bufferSizeInBytes)
+	for i := range s {
+		bytes[2*i] = byte(s[i])
+		bytes[2*i+1] = byte(s[i] >> 8)
 	}
+	return bytes
+}
 
-	return finalSound
-
+func (a *Audio) fill(sample []int16) {
+	vol := float64(a.volume)
+	f := float64(a.sampleRate)
+	length := int(f / float64(a.toneFrequency))
+	var amp int16
+	for i := 0; i < len(sample); i++ {
+		amp = int16(vol * math.MaxInt16)
+		if i%length < int(float64(length)*a.sequence) {
+			amp = -amp
+		}
+		sample[i] = amp
+	}
 }
