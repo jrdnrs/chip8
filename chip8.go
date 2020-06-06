@@ -210,8 +210,6 @@ func (c8 *Chip8) EmulateCycle() {
 		unknownOpcode()
 	}
 
-	c8.updateTimers()
-
 }
 
 // Increment Program Counter by count * 2, as each instruction takes up two registers in memory.
@@ -228,7 +226,6 @@ func (c8 *Chip8) updateTimers() {
 	}
 
 	if c8.soundTimer > 0 {
-		fmt.Println("BEEP")
 		c8.soundTimer--
 
 	}
