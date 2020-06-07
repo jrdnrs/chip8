@@ -43,7 +43,7 @@ type Emulator struct {
 	pc uint16
 
 	// Display of 2048 pixels (2:1).
-	gfx [64 * 32]byte
+	gfx [32][8]byte
 
 	// The timers will count down at 60hz, when set above zero.
 	delayTimer byte
@@ -84,9 +84,10 @@ func (emu *Emulator) Initialise() {
 	}
 
 	// Clear display.
-	for i := range emu.gfx {
-		emu.gfx[i] = 0
-
+	for i, r := range emu.gfx {
+		for j := range r {
+			emu.gfx[i][j] = 0
+		}
 	}
 
 	// clear stack.
@@ -238,9 +239,10 @@ func (emu *Emulator) updateTimers() {
 
 // Clears the screen.
 func (emu *Emulator) x00E0() {
-	for i := range emu.gfx {
-		emu.gfx[i] = 0
-
+	for i, r := range emu.gfx {
+		for j := range r {
+			emu.gfx[i][j] = 0
+		}
 	}
 
 	emu.incrementPC(1)
@@ -516,6 +518,7 @@ func (emu *Emulator) xDXYN() {
 	vy := int(emu.register[y]) // display y coordinate
 
 	var spr byte
+	var xByte, shift int
 
 	emu.register[0xF] = 0
 
@@ -524,11 +527,14 @@ func (emu *Emulator) xDXYN() {
 
 		for xLine := 0; xLine < 8; xLine++ {
 
+			xByte = int((vx + xLine) / 8)	// which byte in the array contains the x coordinate
+			shift = 7 - ((vx + xLine) % 8)	// shift required to put desired bit in lsb position
+
 			if spr&(0x80>>xLine) != 0 {
-				if emu.gfx[vx+xLine+((vy+yLine)*64)] == 1 {
+				if emu.gfx[vy+yLine][xByte]>>shift != 0 {
 					emu.register[0xF] = 1
 				}
-				emu.gfx[vx+xLine+((vy+yLine)*64)] ^= 1
+				emu.gfx[vy+yLine][xByte] ^= 0x1 << shift
 			}
 		}
 	}

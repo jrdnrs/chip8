@@ -22,7 +22,7 @@ const (
 func main() {
 
 	if debug {
-		runTests()
+		// runTests()
 		return
 	}
 

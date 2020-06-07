@@ -1,9 +1,6 @@
-
-
-
-
-
-- Change clock speed.
 - Add way to stop, start and step opcodes during emulation.
 - Add way to change palette.
 - Add view for opcodes and memory during emulation.
+- Add display wrapping
+- Add de-flicker
+- Change gfx memory to use [32][8]byte array?
