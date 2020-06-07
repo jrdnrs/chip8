@@ -515,27 +515,20 @@ func (emu *Emulator) xDXYN() {
 	vx := int(emu.register[x]) // display x coordinate
 	vy := int(emu.register[y]) // display y coordinate
 
-	start := 64*vy + vx // number of pixels since origin
-	pos := start             // current pixel
+	var spr byte
+
+	emu.register[0xF] = 0
 
 	for yLine := 0; yLine < n; yLine++ {
-		spr := emu.memory[int(emu.i)+yLine] // bit-coded sprite data
+		spr = emu.memory[int(emu.i)+yLine] // bit-coded sprite data
 
 		for xLine := 0; xLine < 8; xLine++ {
-			pos = start + (yLine * 64) + xLine
 
-			pix := spr & (0x80 >> xLine) // scan through sprite, one pixel at a time
-
-			if pix >= 1 {
-				if emu.gfx[pos] == 1 {
-					emu.gfx[pos] = 0
+			if spr&(0x80>>xLine) != 0 {
+				if emu.gfx[vx+xLine+((vy+yLine)*64)] == 1 {
 					emu.register[0xF] = 1
-
-				} else {
-					emu.gfx[pos] = 1
-					emu.register[0xF] = 0
-
 				}
+				emu.gfx[vx+xLine+((vy+yLine)*64)] ^= 1
 			}
 		}
 	}

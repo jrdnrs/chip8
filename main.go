@@ -12,9 +12,9 @@ const (
 
 	clockSpeed = 500 // hz
 
-	beeperToneFrequency = 600   // hz
+	beeperToneFrequency = 555   // hz
 	beeperSampleRate    = 44100 // hz
-	beeperVolume        = 0.1 // 0-1
+	beeperVolume        = 0.05  // 0-1
 
 	displayScale = 10
 )
