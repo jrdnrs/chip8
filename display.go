@@ -13,18 +13,19 @@ var (
 
 // Display handles rendering functions.
 type Display struct {
-	memory        *[32][8]byte
-	previousFrame [32][8]byte
-	display       *ebiten.Image
-	drawRequired  *bool
+	memory           *[32][8]byte
+	previousFrame    [32][8]byte
+	display          *ebiten.Image
+	drawImageOptions *ebiten.DrawImageOptions
+	drawRequired     *bool
 }
 
 // NewDisplay exposes Render function which uses gfxMemory to draw image to screen.
 func NewDisplay(gfxMemory *[32][8]byte, drawRequired *bool) *Display {
 	return &Display{
-		memory:        gfxMemory,
-		previousFrame: *gfxMemory,
-		drawRequired:  drawRequired,
+		memory:           gfxMemory,
+		drawRequired:     drawRequired,
+		drawImageOptions: &ebiten.DrawImageOptions{},
 	}
 }
 
@@ -43,7 +44,7 @@ func (d *Display) Render(screen *ebiten.Image) error {
 		*(d.drawRequired) = false
 	}
 
-	if err := screen.DrawImage(d.display, &ebiten.DrawImageOptions{}); err != nil {
+	if err := screen.DrawImage(d.display, d.drawImageOptions); err != nil {
 		return err
 	}
 
@@ -51,17 +52,19 @@ func (d *Display) Render(screen *ebiten.Image) error {
 }
 
 func (d *Display) drawPixels() {
-	for y, xBytes := range d.memory { // loop through array of rows
+	// loop through array of rows
+	for y, xBytes := range d.memory {
 
-		for x := range xBytes { // loop through bytes in row
+		// loop through bytes in row
+		for x := range xBytes {
 
-			if d.memory[y][x] != d.previousFrame[y][x] { // don't check further if entire byte is same as previous frame
+			// don't check further if entire byte is same as previous frame
+			if d.memory[y][x] != d.previousFrame[y][x] {
 
-				var mask byte
+				// loop through bits with mask to update those that have changed
+				for b := 0; b < 8; b++ {
 
-				for b := 0; b < 8; b++ { // loop through bits with mask to update those that have changed
-
-					mask = 0x80 >> b
+					mask := byte(0x80) >> b
 
 					if d.memory[y][x]&mask != d.previousFrame[y][x]&mask {
 						if d.memory[y][x]&mask != 0 {

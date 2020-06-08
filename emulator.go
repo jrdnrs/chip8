@@ -517,27 +517,59 @@ func (emu *Emulator) xDXYN() {
 	vx := int(emu.register[x]) // display x coordinate
 	vy := int(emu.register[y]) // display y coordinate
 
-	var spr byte
-	var xByte, shift int
+	var wVx, wVy int // wrapped vx, vy
+
+	// wrap overflow
+	if vx > 63 {
+		wVx = vx % 64
+	} else {
+		wVx = vx
+	}
+	if vy > 31 {
+		wVy = vy % 32
+	} else {
+		wVy = vy
+	}
 
 	emu.register[0xF] = 0
 
-	for yLine := 0; yLine < n; yLine++ {
-		spr = emu.memory[int(emu.i)+yLine] // bit-coded sprite data
+	for i := 0; i < n; i++ {
 
-		for xLine := 0; xLine < 8; xLine++ {
+		// skip if specified y axis is now off screen
+		if wVy+i > 31 {
+			continue
+		}
 
-			xByte = int((vx + xLine) / 8)	// which byte in the array contains the x coordinate
-			shift = 7 - ((vx + xLine) % 8)	// shift required to put desired bit in lsb position
+		spr := emu.memory[int(emu.i)+i] // bit-coded sprite data
 
-			if spr&(0x80>>xLine) != 0 {
-				if emu.gfx[vy+yLine][xByte]>>shift != 0 {
-					emu.register[0xF] = 1
-				}
-				emu.gfx[vy+yLine][xByte] ^= 0x1 << shift
+		// if sprite x coordinate corresponds with a single byte in the row...
+		if wVx%8 == 0 {
+			if emu.gfx[wVy+i][wVx/8]&spr > 0 {
+				emu.register[0xF] = 1
 			}
+			emu.gfx[wVy+i][wVx/8] ^= spr
+
+			// else, split the sprite to fill the two corresponding bytes in row
+		} else {
+			// first part of sprite
+			if emu.gfx[wVy+i][wVx/8]&(spr>>(wVx%8)) > 0 {
+				emu.register[0xF] = 1
+			}
+			emu.gfx[wVy+i][wVx/8] ^= spr >> (wVx % 8)
+
+			// skip if second part of the sprite is off screen
+			if wVx > 55 {
+				continue
+			}
+
+			// second part of sprite
+			if emu.gfx[wVy+i][wVx/8+1]&(spr<<(8-(wVx%8))) > 0 {
+				emu.register[0xF] = 1
+			}
+			emu.gfx[wVy+i][wVx/8+1] ^= spr << (8 - (wVx % 8))
 		}
 	}
+
 	emu.drawRequired = true
 	emu.incrementPC(1)
 
