@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"os"
+	"time"
 )
 
+// Hex based fontset which is loaded into chip8's memory.
 var fontset = [80]byte{
 	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
 	0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -24,91 +27,117 @@ var fontset = [80]byte{
 	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
 
-// Emulator opcode interpreter.
+// Emulator handles emulation of the chip8. Use NewEmulator to initialise.
 type Emulator struct {
 	// Current opcode to be executed.
 	opcode uint16
 
-	// 4096 8-bit words for main memory.
-	// 0x000-0x1FF is used for Chip8 interpreter, however this will contain the font set in emu.
-	// 0x050-0x0A0 is used for the built in 4x5 pixel font set.
+	// 4096 8-bit registers for main memory.
+	// 0x000-0x04F is used for the built in 4x5 pixel font set.
 	// 0x200-0xFFF is used for program rom and rest is work ram.
 	memory [4096]byte
-	// 15 8-bit general purpose registers names V0, V1...VE. The 16th register (VF) is used for the carry flag.
+
+	// 15 8-bit general purpose registers named V0, V1...VE. The 16th register (VF) is used as a flag to indicate a borrow, carry or collision in the respective circumstance.
 	register [16]byte
 
-	// 16-bit Index register. Can have value from 0x000-0xFFF.
+	// 16-bit index register. Can have value from 0x000-0xFFF.
 	i uint16
-	// 16-bit Program Counter register. Can have value from 0x000-0xFFF.
+
+	// 16-bit program counter register. Can have value from 0x000-0xFFF.
+	// Programs are expected to start at 0x200.
 	pc uint16
 
-	// Display of 2048 pixels (2:1).
-	gfx [32][8]byte
+	// 2048 bit-coded pixels (64x32)
+	Display [256]byte
 
-	// The timers will count down at 60hz, when set above zero.
+	// The timers will count down at 60hz, when greater than 0.
 	delayTimer byte
-	soundTimer byte
+	SoundTimer byte
 
 	// The stack is used to remember the current location before a jump is performed.
 	stack [16]uint16
 	sp    uint16
 
-	// HEX based keypad (0x0-0xF).
-	key [16]byte
+	// Hex based keypad (0x0-0xF).
+	Key [16]byte
 
-	drawRequired bool
+	// Timer is used to determine the number of clock cycles that should have been executed at any point.
+	timer int64
+
+	// The number of clock cycles that have been executed.
+	cycles int64
+
+	// The number of clock cycles to execute per second.
+	clockSpeed int64
+
+	// A chip8 game.
+	rom []byte
+
+	// Whether cycles should not be executed.
+	isPaused bool
 }
 
-// Initialise registers and memory once.
-func (emu *Emulator) Initialise() {
-	emu.pc = 0x200 // System expects the application to be loaded at memory location 0x200.
-	emu.opcode = 0 // Reset current opcode.
-	emu.i = 0      // Reset Index register.
-	emu.sp = 0     // Reset Stack Pointer.
+// NewEmulator returns a pointer to Emulator which handles emulation of the chip8.
+// The clockSpeed arg determines how many clock cycles should be executed per second.
+// The rom byte slice will be loaded into the chip8 memory to be played.
+func NewEmulator(clockSpeed int64, rom []byte) *Emulator {
+	emu := &Emulator{
+		clockSpeed: clockSpeed,
+		rom:        rom,
+	}
 
-	// Clear registers V0-VF.
+	emu.Reset()
+
+	return emu
+}
+
+// Reset resets all the registers, memory, timers and loads the rom.
+func (emu *Emulator) Reset() {
+	emu.pc = 0x200
+	emu.opcode = 0
+	emu.i = 0
+	emu.sp = 0
+	emu.SoundTimer = 0
+	emu.delayTimer = 0
+	emu.cycles = 0
+	emu.timer = time.Now().UnixNano()
+	emu.isPaused = false
+
 	for i := range emu.register {
 		emu.register[i] = 0
-
 	}
 
-	// Load fontset and clear other memory.
 	for i := range emu.memory {
-		if i < 80 {
-			emu.memory[i] = fontset[i]
-		} else {
-			emu.memory[i] = 0
-
-		}
-
+		emu.memory[i] = 0
 	}
 
-	// Clear display.
-	for i, r := range emu.gfx {
-		for j := range r {
-			emu.gfx[i][j] = 0
-		}
+	for i := range emu.Display {
+		emu.Display[i] = 0
 	}
 
-	// clear stack.
 	for i := range emu.stack {
 		emu.stack[i] = 0
-
 	}
 
+	emu.loadFontset()
+	emu.loadRom()
 }
 
-// LoadRom accepts slice of bytes and loads into memory, starting at 0x200.
-func (emu *Emulator) LoadRom(rom []byte) error {
-	for i, byt := range rom {
-		emu.memory[0x200+i] = byt
+// Process uses the time since emulation was started to determine how many clock cycles should have been executed since then. The appropriate number of cycles will be executed to match this figure.
+// If isPaused is set, the number of cycles recorded will be set to the target figure.
+func (emu *Emulator) Process() {
+	now := time.Now().UnixNano()
+	target := int64(float64((now-emu.timer)*emu.clockSpeed) / 1_000_000_000)
+	if !emu.isPaused {
+		for emu.cycles < target {
+			emu.EmulateCycle()
+		}
+	} else {
+		emu.cycles = target
 	}
-
-	return nil
-
 }
 
-// EmulateCycle fetches, decodes, executes next opcode and updates timers.
+// EmulateCycle fetches, decodes, executes next opcode.
 func (emu *Emulator) EmulateCycle() {
 
 	// Opcodes are two bytes long and stored big-endian.
@@ -211,43 +240,61 @@ func (emu *Emulator) EmulateCycle() {
 		unknownOpcode()
 	}
 
+	emu.cycles++
 }
 
-// Increment Program Counter by count * 2, as each instruction takes up two registers in memory.
-func (emu *Emulator) incrementPC(count uint16) {
-	emu.pc += 2 * count
-
-}
-
-// CHIP-8 has two timers. They both count down at 60 hertz, until they reach 0.
-func (emu *Emulator) updateTimers() {
+// UpdateTimers will decrement the soundTimer and delayTimer, if greater than 0.
+// These 2 timers should be updated every 60th of a second.
+func (emu *Emulator) UpdateTimers() {
 	if emu.delayTimer > 0 {
 		emu.delayTimer--
-
 	}
 
-	if emu.soundTimer > 0 {
-		emu.soundTimer--
-
+	if emu.SoundTimer > 0 {
+		emu.SoundTimer--
 	}
-
 }
 
-/////////////////////////////////
-// Opcodes
-/////////////////////////////////
+// Pause pauses the emulation.
+func (emu *Emulator) Pause() {
+	emu.isPaused = true
+}
+
+// Continue continues the emulation.
+func (emu *Emulator) Continue() {
+	emu.isPaused = false
+}
+
+// loadRom loads the rom into memory, starting at 0x200. Will exit if the rom is too large to fit into memory.
+func (emu *Emulator) loadRom() {
+	if len(emu.rom) > 0xE00 {
+		fmt.Println("File is too large to fit in memory.")
+		os.Exit(1)
+	}
+	for i, b := range emu.rom {
+		emu.memory[0x200+i] = b
+	}
+}
+
+// loadFontset loads the fontset into memory, starting at 0x000.
+func (emu *Emulator) loadFontset() {
+	for i := 0; i < 80; i++ {
+		emu.memory[i] = fontset[i]
+	}
+}
+
+// incrementPC increments the program counter register by count * 2, as each instruction takes up two registers in memory.
+func (emu *Emulator) incrementPC(count uint16) {
+	emu.pc += 2 * count
+}
 
 // Clears the screen.
 func (emu *Emulator) x00E0() {
-	for i, r := range emu.gfx {
-		for j := range r {
-			emu.gfx[i][j] = 0
-		}
+	for i := range emu.Display {
+		emu.Display[i] = 0
 	}
 
 	emu.incrementPC(1)
-
-	emu.drawRequired = true
 }
 
 // Returns from a subroutine.
@@ -256,14 +303,12 @@ func (emu *Emulator) x00EE() {
 	emu.pc = emu.stack[emu.sp]
 
 	emu.incrementPC(1)
-
 }
 
 // Jumps to address NNN.
 func (emu *Emulator) x1NNN() {
 	nnn := emu.opcode & 0x0FFF
 	emu.pc = nnn
-
 }
 
 // Calls subroutine at NNN.
@@ -273,7 +318,6 @@ func (emu *Emulator) x2NNN() {
 
 	nnn := emu.opcode & 0x0FFF
 	emu.pc = nnn
-
 }
 
 // Skips the next instruction if VX equals NN.
@@ -283,12 +327,9 @@ func (emu *Emulator) x3XNN() {
 
 	if emu.register[x] == nn {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Skips the next instruction if VX doesn't equal NN.
@@ -298,12 +339,9 @@ func (emu *Emulator) x4XNN() {
 
 	if emu.register[x] != nn {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Skips the next instruction if VX equals VY.
@@ -313,12 +351,9 @@ func (emu *Emulator) x5XY0() {
 
 	if emu.register[x] == emu.register[y] {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Sets VX to NN.
@@ -329,7 +364,6 @@ func (emu *Emulator) x6XNN() {
 	emu.register[x] = nn
 
 	emu.incrementPC(1)
-
 }
 
 // Adds NN to VX. (Carry flag is not changed).
@@ -340,7 +374,6 @@ func (emu *Emulator) x7XNN() {
 	emu.register[x] += nn
 
 	emu.incrementPC(1)
-
 }
 
 // Sets VX to the value of VY.
@@ -351,7 +384,6 @@ func (emu *Emulator) x8XY0() {
 	emu.register[x] = emu.register[y]
 
 	emu.incrementPC(1)
-
 }
 
 // Sets VX to VX or VY. (Bitwise OR operation).
@@ -362,7 +394,6 @@ func (emu *Emulator) x8XY1() {
 	emu.register[x] = emu.register[x] | emu.register[y]
 
 	emu.incrementPC(1)
-
 }
 
 // Sets VX to VX and VY. (Bitwise AND operation).
@@ -392,16 +423,13 @@ func (emu *Emulator) x8XY4() {
 
 	if int(emu.register[x])+int(emu.register[y]) > 0xFF {
 		emu.register[0xF] = 1
-
 	} else {
 		emu.register[0xF] = 0
-
 	}
 
 	emu.register[x] += emu.register[y]
 
 	emu.incrementPC(1)
-
 }
 
 // VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
@@ -411,16 +439,13 @@ func (emu *Emulator) x8XY5() {
 
 	if emu.register[y] > emu.register[x] {
 		emu.register[0xF] = 0
-
 	} else {
 		emu.register[0xF] = 1
-
 	}
 
 	emu.register[x] -= emu.register[y]
 
 	emu.incrementPC(1)
-
 }
 
 // Stores the least significant bit of VX in VF and then shifts VX to the right by 1.
@@ -431,7 +456,6 @@ func (emu *Emulator) x8XY6() {
 	emu.register[x] = emu.register[x] >> 1
 
 	emu.incrementPC(1)
-
 }
 
 // Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
@@ -441,16 +465,13 @@ func (emu *Emulator) x8XY7() {
 
 	if emu.register[x] > emu.register[y] {
 		emu.register[0xF] = 0
-
 	} else {
 		emu.register[0xF] = 1
-
 	}
 
 	emu.register[x] = emu.register[y] - emu.register[x]
 
 	emu.incrementPC(1)
-
 }
 
 // Stores the most significant bit of VX in VF and then shifts VX to the left by 1.
@@ -461,7 +482,6 @@ func (emu *Emulator) x8XYE() {
 	emu.register[x] = emu.register[x] << 1
 
 	emu.incrementPC(1)
-
 }
 
 // Skips the next instruction if VX doesn't equal VY.
@@ -471,12 +491,9 @@ func (emu *Emulator) x9XY0() {
 
 	if emu.register[x] != emu.register[y] {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Sets I to the address NNN.
@@ -485,14 +502,12 @@ func (emu *Emulator) xANNN() {
 	emu.i = nnn
 
 	emu.incrementPC(1)
-
 }
 
 // Jumps to the address NNN plus V0.
 func (emu *Emulator) xBNNN() {
 	nnn := emu.opcode & 0x0FFF
 	emu.pc = nnn + uint16(emu.register[0])
-
 }
 
 // Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 0xFF) and NN.
@@ -503,7 +518,6 @@ func (emu *Emulator) xCXNN() {
 	emu.register[x] = byte(nn) & byte(rand.Intn(0xFF))
 
 	emu.incrementPC(1)
-
 }
 
 // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
@@ -514,93 +528,61 @@ func (emu *Emulator) xDXYN() {
 	y := int((emu.opcode & 0x00F0) >> 4)
 	n := int((emu.opcode & 0x000F))
 
-	vx := int(emu.register[x]) // display x coordinate
-	vy := int(emu.register[y]) // display y coordinate
+	vx := int(emu.register[x]) // display x coord
+	vy := int(emu.register[y]) // display y coord
 
-	var wVx, wVy int // wrapped vx, vy
+	c := byte(0)       // collision mask
+	pos := vy*8 + vx/8 // get byte offset
+	i := vx % 8        // get bit offset
 
-	// wrap overflow
-	if vx > 63 {
-		wVx = vx % 64
-	} else {
-		wVx = vx
-	}
-	if vy > 31 {
-		wVy = vy % 32
-	} else {
-		wVy = vy
-	}
-
-	emu.register[0xF] = 0
-
-	for i := 0; i < n; i++ {
-
-		// skip if specified y axis is now off screen
-		if wVy+i > 31 {
-			continue
+	// loop through bytes, representing each row of sprite's pixels
+	for _, s := range emu.memory[emu.i : emu.i+uint16(n)] {
+		if pos > 255 {
+			break
 		}
 
-		spr := emu.memory[int(emu.i)+i] // bit-coded sprite data
+		c |= emu.Display[pos] & (s >> i)
+		emu.Display[pos] ^= (s >> i)
 
-		// if sprite x coordinate corresponds with a single byte in the row...
-		if wVx%8 == 0 {
-			if emu.gfx[wVy+i][wVx/8]&spr > 0 {
-				emu.register[0xF] = 1
-			}
-			emu.gfx[wVy+i][wVx/8] ^= spr
-
-			// else, split the sprite to fill the two corresponding bytes in row
-		} else {
-			// first part of sprite
-			if emu.gfx[wVy+i][wVx/8]&(spr>>(wVx%8)) > 0 {
-				emu.register[0xF] = 1
-			}
-			emu.gfx[wVy+i][wVx/8] ^= spr >> (wVx % 8)
-
-			// skip if second part of the sprite is off screen
-			if wVx > 55 {
-				continue
-			}
-
-			// second part of sprite
-			if emu.gfx[wVy+i][wVx/8+1]&(spr<<(8-(wVx%8))) > 0 {
-				emu.register[0xF] = 1
-			}
-			emu.gfx[wVy+i][wVx/8+1] ^= spr << (8 - (wVx % 8))
+		// write pixels that overlap into next byte, unless it's out of memory range
+		if i > 0 && pos+1 < 256 {
+			c |= emu.Display[pos+1] & (s << (8 - i))
+			emu.Display[pos+1] ^= (s << (8 - i))
 		}
+
+		pos += 8
 	}
 
-	emu.drawRequired = true
+	// update collision register
+	if c > 0 {
+		emu.register[0xF] = 1
+	} else {
+		emu.register[0xF] = 0
+	}
+
 	emu.incrementPC(1)
-
 }
 
 // Skips the next instruction if the key stored in VX is pressed.
 func (emu *Emulator) xEX9E() {
 	x := int((emu.opcode & 0x0F00) >> 8)
 
-	if emu.key[emu.register[x]] != 0 {
+	if emu.Key[emu.register[x]] != 0 {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Skips the next instruction if the key stored in VX isn't pressed.
 func (emu *Emulator) xEXA1() {
 	x := int((emu.opcode & 0x0F00) >> 8)
 
-	if emu.key[emu.register[x]] == 0 {
+	if emu.Key[emu.register[x]] == 0 {
 		emu.incrementPC(2)
-
 	} else {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Sets VX to the value of the delay timer.
@@ -610,7 +592,6 @@ func (emu *Emulator) xFX07() {
 	emu.register[x] = emu.delayTimer
 
 	emu.incrementPC(1)
-
 }
 
 // A key press is awaited, and then stored in VX. (Blocking Operation. All instruction halted until next key event).
@@ -619,20 +600,16 @@ func (emu *Emulator) xFX0A() {
 
 	pressed := false
 
-	for i := range emu.key {
-		if emu.key[i] != 0 {
+	for i := range emu.Key {
+		if emu.Key[i] != 0 {
 			emu.register[x] = byte(i)
 			pressed = true
-
 		}
-
 	}
 
 	if pressed {
 		emu.incrementPC(1)
-
 	}
-
 }
 
 // Sets the delay timer to VX.
@@ -642,14 +619,13 @@ func (emu *Emulator) xFX15() {
 	emu.delayTimer = emu.register[x]
 
 	emu.incrementPC(1)
-
 }
 
 // Sets the sound timer to VX.
 func (emu *Emulator) xFX18() {
 	x := int((emu.opcode & 0x0F00) >> 8)
 
-	emu.soundTimer = emu.register[x]
+	emu.SoundTimer = emu.register[x]
 
 	emu.incrementPC(1)
 }
@@ -662,14 +638,11 @@ func (emu *Emulator) xFX1E() {
 
 	if emu.i > 0xFFF {
 		emu.register[0xF] = 1
-
 	} else {
 		emu.register[0xF] = 0
-
 	}
 
 	emu.incrementPC(1)
-
 }
 
 // Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
@@ -679,7 +652,6 @@ func (emu *Emulator) xFX29() {
 	emu.i = uint16(emu.register[x]) * 5
 
 	emu.incrementPC(1)
-
 }
 
 // Stores the binary-coded decimal representation of VX, with the most significant of three digits at the address in I, the middle digit at I plus 1, and the least significant digit at I plus 2.
@@ -693,7 +665,6 @@ func (emu *Emulator) xFX33() {
 	emu.memory[emu.i+2] = (vx % 100) % 10
 
 	emu.incrementPC(1)
-
 }
 
 // Stores V0 to VX (including VX) in memory starting at address I. The offset from I is increased by 1 for each value written, but I itself is left unmodified.
@@ -702,11 +673,9 @@ func (emu *Emulator) xFX55() {
 
 	for i := 0; i <= x; i++ {
 		emu.memory[int(emu.i)+i] = emu.register[i]
-
 	}
 
 	emu.incrementPC(1)
-
 }
 
 // Fills V0 to VX (including VX) with values from memory starting at address I. The offset from I is increased by 1 for each value written, but I itself is left unmodified.
@@ -715,9 +684,7 @@ func (emu *Emulator) xFX65() {
 
 	for i := 0; i <= x; i++ {
 		emu.register[i] = emu.memory[int(emu.i)+i]
-
 	}
 
 	emu.incrementPC(1)
-
 }

@@ -1,80 +1,67 @@
 package main
 
 import (
+	"image"
 	"image/color"
+	"image/draw"
 
 	"github.com/hajimehoshi/ebiten"
 )
 
 var (
-	off = color.RGBA{0x90, 0x90, 0x90, 0xFF}
-	on  = color.RGBA{0x1E, 0x1E, 0x1E, 0xFF}
+	off = color.RGBA{0xC5, 0xCA, 0xA4, 0xFF}
+	on  = color.RGBA{0x48, 0x52, 0x39, 0xFF}
 )
 
-// Display handles rendering functions.
+// Display handles rendering to screen. Use NewDisplay to initialise.
 type Display struct {
-	memory           *[32][8]byte
-	previousFrame    [32][8]byte
-	display          *ebiten.Image
-	drawImageOptions *ebiten.DrawImageOptions
-	drawRequired     *bool
+	memory *[256]byte
+	buffer *image.RGBA
+
+	// multiplier for display resolution
+	DisplayScale float64
 }
 
-// NewDisplay exposes Render function which uses gfxMemory to draw image to screen.
-func NewDisplay(gfxMemory *[32][8]byte, drawRequired *bool) *Display {
-	return &Display{
-		memory:           gfxMemory,
-		drawRequired:     drawRequired,
-		drawImageOptions: &ebiten.DrawImageOptions{},
-	}
-}
-
-// InitDisplay creates blank image for drawing to.
-func (d *Display) InitDisplay() {
-	image, _ := ebiten.NewImage(64, 32, ebiten.FilterDefault)
-	image.Fill(off)
-	d.display = image
-}
-
-// Render draws the pixels
-func (d *Display) Render(screen *ebiten.Image) error {
-	if *(d.drawRequired) {
-		d.drawPixels()
-		d.previousFrame = *d.memory
-		*(d.drawRequired) = false
+// NewDisplay returns a pointer to Display which handles rendering to screen.
+// The displayMemory pointer represents the 64x32 resolution bit-coded array of pixels, which is updated by the chip8 emulator.
+// The displayScale arg is used as a multiplier for the resolution.
+func NewDisplay(displayMemory *[256]byte, displayScale float64) *Display {
+	d := &Display{
+		memory:       displayMemory,
+		DisplayScale: displayScale,
 	}
 
-	if err := screen.DrawImage(d.display, d.drawImageOptions); err != nil {
-		return err
-	}
+	i := image.NewRGBA(image.Rect(0, 0, 64, 32))
+	d.buffer = i
+	d.fillBuffer(off)
 
-	return nil
+	return d
 }
 
-func (d *Display) drawPixels() {
-	// loop through array of rows
-	for y, xBytes := range d.memory {
+// Render reads from the chip8 emulator's display memory and draws the final image to screen.
+func (d *Display) Render(screen *ebiten.Image) {
+	if ebiten.IsDrawingSkipped() {
+		return
+	}
+	d.updateBuffer()
+	screen.ReplacePixels(d.buffer.Pix)
+}
 
-		// loop through bytes in row
-		for x := range xBytes {
-
-			// don't check further if entire byte is same as previous frame
-			if d.memory[y][x] != d.previousFrame[y][x] {
-
-				// loop through bits with mask to update those that have changed
-				for b := 0; b < 8; b++ {
-
-					mask := byte(0x80) >> b
-
-					if d.memory[y][x]&mask != d.previousFrame[y][x]&mask {
-						if d.memory[y][x]&mask != 0 {
-							d.display.Set(x*8+b, y, on)
-						} else {
-							d.display.Set(x*8+b, y, off)
-						}
-					}
+// updateBuffer updates the offscreen image as a buffer before rendering to screen.
+func (d *Display) updateBuffer() {
+	d.fillBuffer(off)
+	for pos, b := range d.memory {
+		if b != 0 {
+			for i := 0; i < 8; i++ {
+				if b&(0x80>>i) != 0 {
+					d.buffer.SetRGBA(((pos%8)*8)+i, pos/8, on)
 				}
 			}
 		}
 	}
+}
+
+// fillBuffer fills the image buffer with the given colour.
+func (d *Display) fillBuffer(c color.RGBA) {
+	draw.Draw(d.buffer, d.buffer.Bounds(), &image.Uniform{c}, image.Point{}, draw.Src)
 }
